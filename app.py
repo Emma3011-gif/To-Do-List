@@ -3,7 +3,6 @@ from database import get_db_connection, init_db, dict_from_row
 from datetime import datetime
 import os
 import hashlib
-import sqlite3
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -54,20 +53,20 @@ def register():
         cursor = conn.cursor()
         try:
             cursor.execute(
-                'INSERT INTO users (email, password, first_name, last_name) VALUES (?, ?, ?, ?)',
+                'INSERT INTO users (email, password, first_name, last_name) VALUES (%s, %s, %s, %s) RETURNING id',
                 (email, hash_password(password), first_name, last_name)
             )
+            result = cursor.fetchone()
             conn.commit()
-            user_id = cursor.lastrowid
+            user_id = result['id']
             session['user_id'] = user_id
             session['email'] = email
             session['first_name'] = first_name
             return redirect(url_for('index'))
-        except sqlite3.IntegrityError:
-            conn.close()
-            return render_template('login.html', error='Email already registered')
         except Exception as e:
             conn.close()
+            if 'unique' in str(e).lower():
+                return render_template('login.html', error='Email already registered')
             return render_template('login.html', error=str(e))
     
     return render_template('login.html')
@@ -83,7 +82,7 @@ def login():
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM users WHERE email=?', (email,))
+    cursor.execute('SELECT * FROM users WHERE email=%s', (email,))
     row = cursor.fetchone()
     conn.close()
     
@@ -107,7 +106,7 @@ def get_tasks():
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM tasks WHERE user_id=? ORDER BY created_at DESC', (session['user_id'],))
+    cursor.execute('SELECT * FROM tasks WHERE user_id=%s ORDER BY created_at DESC', (session['user_id'],))
     tasks = [task_to_dict(dict_from_row(row)) for row in cursor.fetchall()]
     conn.close()
     return jsonify(tasks)
@@ -126,10 +125,11 @@ def create_task():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        'INSERT INTO tasks (title, description, due_date, category_id, user_id) VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO tasks (title, description, due_date, category_id, user_id) VALUES (%s, %s, %s, %s, %s) RETURNING id',
         (title, data.get('description'), data.get('due_date'), data.get('category_id'), session['user_id'])
     )
-    task_id = cursor.lastrowid
+    result = cursor.fetchone()
+    task_id = result['id']
     conn.commit()
     conn.close()
     
@@ -149,7 +149,7 @@ def update_task(task_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        'UPDATE tasks SET title=?, description=?, due_date=?, category_id=?, completed=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+        'UPDATE tasks SET title=%s, description=%s, due_date=%s, category_id=%s, completed=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s',
         (data.get('title'), data.get('description'), data.get('due_date'), 
          data.get('category_id'), data.get('completed', 0), task_id)
     )
@@ -168,7 +168,7 @@ def update_task(task_id):
 def delete_task(task_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM tasks WHERE id=?', (task_id,))
+    cursor.execute('DELETE FROM tasks WHERE id=%s', (task_id,))
     
     if cursor.rowcount == 0:
         conn.close()
@@ -182,7 +182,7 @@ def delete_task(task_id):
 def toggle_task(task_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('UPDATE tasks SET completed = 1 - completed, updated_at=CURRENT_TIMESTAMP WHERE id=?', (task_id,))
+    cursor.execute('UPDATE tasks SET completed = 1 - completed, updated_at=CURRENT_TIMESTAMP WHERE id=%s', (task_id,))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -203,9 +203,9 @@ def get_stats():
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT COUNT(*) as total FROM tasks WHERE user_id=?', (session['user_id'],))
+    cursor.execute('SELECT COUNT(*) as total FROM tasks WHERE user_id=%s', (session['user_id'],))
     total = cursor.fetchone()['total']
-    cursor.execute('SELECT COUNT(*) as completed FROM tasks WHERE completed=1 AND user_id=?', (session['user_id'],))
+    cursor.execute('SELECT COUNT(*) as completed FROM tasks WHERE completed=1 AND user_id=%s', (session['user_id'],))
     completed = cursor.fetchone()['completed']
     conn.close()
     return jsonify({
@@ -221,7 +221,7 @@ def get_profile():
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, first_name, last_name, email FROM users WHERE id=?', (session['user_id'],))
+    cursor.execute('SELECT id, first_name, last_name, email FROM users WHERE id=%s', (session['user_id'],))
     row = cursor.fetchone()
     conn.close()
     
@@ -238,7 +238,7 @@ def get_profile():
 def get_task_by_id(task_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM tasks WHERE id=?', (task_id,))
+    cursor.execute('SELECT * FROM tasks WHERE id=%s', (task_id,))
     row = cursor.fetchone()
     conn.close()
     return task_to_dict(dict_from_row(row)) if row else None
