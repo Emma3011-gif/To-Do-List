@@ -71,7 +71,7 @@ def init_db():
     ''')
     
     # Insert default categories if none exist
-    cursor.execute('SELECT COUNT(*) FROM categories')
+    cursor.execute('SELECT COUNT(*) as count FROM categories')
     if cursor.fetchone()['count'] == 0:
         default_categories = [
             ('Work', '#ef4444'),

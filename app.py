@@ -7,8 +7,21 @@ import hashlib
 app = Flask(__name__, static_folder='static', template_folder='templates')
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Initialize database on startup
-init_db()
+# Lazy database initialization
+_db_initialized = False
+
+def ensure_db_initialized():
+    global _db_initialized
+    if not _db_initialized:
+        try:
+            init_db()
+            _db_initialized = True
+        except Exception as e:
+            print(f"Database initialization failed: {e}")
+
+@app.before_request
+def initialize_db_on_first_request():
+    ensure_db_initialized()
 
 def task_to_dict(task_row):
     return {
@@ -23,6 +36,17 @@ def task_to_dict(task_row):
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
+
+@app.route('/health')
+def health():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT 1')
+        conn.close()
+        return jsonify({'status': 'healthy', 'database': 'connected'}), 200
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
 
 @app.route('/')
 def index():
