@@ -1,12 +1,14 @@
 let currentFilter = 'all';
 let selectedCategory = null;
 let tasks = [];
+let categories = [];
 let userProfile = null;
 let notificationPermission = false;
 let notifiedTasks = new Set();
 
 document.addEventListener('DOMContentLoaded', () => {
     loadProfile();
+    loadCategories();
     loadTasks();
     setupEventListeners();
     requestNotificationPermission();
@@ -25,6 +27,33 @@ async function loadProfile() {
     } catch (err) {
         console.error('Failed to load profile', err);
     }
+}
+
+async function loadCategories() {
+    try {
+        const res = await fetch('/api/categories');
+        if (res.ok) {
+            categories = await res.json();
+            renderCategories();
+        }
+    } catch (err) {
+        console.error('Failed to load categories', err);
+    }
+}
+
+function renderCategories() {
+    const container = document.getElementById('category-pills');
+    container.innerHTML = categories.map(cat => 
+        `<button type="button" class="pill" data-category-id="${cat.id}">${cat.name}</button>`
+    ).join('');
+    
+    container.querySelectorAll('.pill').forEach(btn => {
+        btn.addEventListener('click', () => {
+            container.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedCategory = parseInt(btn.dataset.categoryId);
+        });
+    });
 }
 
 function setupEventListeners() {
@@ -121,7 +150,7 @@ function renderTasks() {
                             </svg>
                             ${task.due_date}
                         </span>` : ''}
-                        ${task.category_id ? `<span class="cat-badge">${task.category_id}</span>` : ''}
+                        ${task.category_id ? `<span class="cat-badge">${getCategoryName(task.category_id)}</span>` : ''}
                     </div>
                 </div>
                 <button class="task-delete" onclick="deleteTask(${task.id})">
@@ -292,6 +321,11 @@ function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+}
+
+function getCategoryName(categoryId) {
+    const cat = categories.find(c => c.id === categoryId);
+    return cat ? cat.name : 'Unknown';
 }
 
 function showToast(message, type = 'success') {
